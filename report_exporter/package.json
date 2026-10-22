@@ -3,10 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "description": "FusionSolar daily report browser export tools",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "browser:install": "playwright install chromium",
     "browser:open": "playwright open --browser chromium",
-    "browser:codegen": "playwright codegen --browser chromium"
+    "browser:codegen": "playwright codegen --browser chromium",
+    "export:today": "node export-today.js"
   },
   "devDependencies": {
     "playwright": "1.64.1"
