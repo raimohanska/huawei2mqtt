@@ -3,6 +3,7 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { openReport } = require('./session');
+const { convertToCsv, logConversion } = require('./convert-csv');
 
 async function main() {
   const session = await openReport({ headed: process.argv.includes('--headed') });
@@ -32,15 +33,20 @@ async function main() {
 
     const destination = path.join(__dirname, 'exports', '134568461', date.slice(0, 4), date.slice(5, 7), date + '.xlsx');
     // Skip only completed files; temporary downloads never use the final name.
+    let existing;
     try {
-      const existing = await fs.readFile(destination);
-      if (existing.length > 4 && existing.subarray(0, 4).equals(Buffer.from([0x50, 0x4b, 0x03, 0x04]))) {
-        console.log('Already downloaded: ' + path.relative(__dirname, destination));
-        return;
-      }
-      throw new Error('Existing file is not an XLSX archive; inspect it before retrying.');
+      existing = await fs.readFile(destination);
     } catch (error) {
       if (error.code !== 'ENOENT') throw error;
+    }
+    if (existing) {
+      if (existing.length <= 4 || !existing.subarray(0, 4).equals(Buffer.from([0x50, 0x4b, 0x03, 0x04]))) {
+        throw new Error('Existing file is not an XLSX archive; inspect it before retrying.');
+      }
+      console.log('Already downloaded: ' + path.relative(__dirname, destination));
+      stage = 'converting the existing workbook to CSV';
+      logConversion(await convertToCsv(destination, date));
+      return;
     }
 
     stage = 'searching for the selected day';
@@ -76,6 +82,8 @@ async function main() {
     }
     await fs.rename(temporary, destination);
     console.log('Downloaded: ' + path.relative(__dirname, destination) + ' (' + contents.length + ' bytes)');
+    stage = 'converting the downloaded workbook to CSV';
+    logConversion(await convertToCsv(destination, date));
   } catch {
     // Do not print raw Playwright errors: they can contain form values or URLs.
     console.error('Export failed while ' + stage + '.');
@@ -87,6 +95,6 @@ async function main() {
 }
 
 main().catch(() => {
-  console.error('No completed report was saved.');
+  console.error('Report export/conversion did not complete.');
   process.exitCode = 1;
 });

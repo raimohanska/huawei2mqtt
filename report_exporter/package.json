@@ -10,9 +10,13 @@
     "browser:install": "playwright install chromium",
     "browser:open": "playwright open --browser chromium",
     "browser:codegen": "playwright codegen --browser chromium",
-    "export:today": "node export-today.js"
+    "export:today": "node export-today.js",
+    "convert:csv": "node convert-csv.js"
   },
   "devDependencies": {
     "playwright": "1.64.1"
+  },
+  "dependencies": {
+    "exceljs": "4.4.0"
   }
 }
