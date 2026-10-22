@@ -1,0 +1,12 @@
+Huawei SUN2000 offline Modbus tester - READ ONLY
+Close FusionSolar commissioning before testing (it may take the connection).
+Target: 192.168.200.1; ports: [6607]; units: [0, 1]
+
+--- 192.168.200.1:6607 / unit 0 ---
+TCP connection accepted.
+  Model [30000]: 'SUN2000-8KTL-M1\x0001074300-002' (raw 53554e323030302d384b544c2d4d310030313037343330302d3030320000)
+  AC active power [32080]: 0 W (raw 00000000)
+  Daily yield [32119]: Modbus exception 0x02: illegal register address
+
+PASS: Read 2 register range(s) without an installer login.
+Working settings: host=192.168.200.1 port=6607 unit=0

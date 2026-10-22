@@ -1,0 +1,27 @@
+Huawei SUN2000 offline Modbus tester - READ ONLY
+Close FusionSolar commissioning before testing (it may take the connection).
+Target: 192.168.2.70; ports: [502, 6607, 6606]; units: [1, 0]
+
+--- 192.168.2.70:502 / unit 1 ---
+  Connection failed: [Errno 61] Connection refused
+
+--- 192.168.2.70:502 / unit 0 ---
+  Connection failed: [Errno 61] Connection refused
+
+--- 192.168.2.70:6607 / unit 1 ---
+  Connection failed: [Errno 61] Connection refused
+
+--- 192.168.2.70:6607 / unit 0 ---
+  Connection failed: [Errno 61] Connection refused
+
+--- 192.168.2.70:6606 / unit 1 ---
+TCP connection accepted.
+  Model [30000]: Peer closed connection before a complete response
+
+--- 192.168.2.70:6606 / unit 0 ---
+TCP connection accepted.
+  Model [30000]: Peer closed connection before a complete response
+
+FAIL: No valid Modbus reply. An open TCP port alone is not sufficient.
+Check the SUN2000 Wi-Fi connection and close commissioning/other clients.
+Retry with --timeout 15 --delay 2, or --unit <known inverter address>.
