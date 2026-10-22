@@ -11,6 +11,8 @@
     "browser:open": "playwright open --browser chromium",
     "browser:codegen": "playwright codegen --browser chromium",
     "export:today": "node export-today.js",
+    "export:reports": "node export-reports.js",
+    "test": "node --test *.test.js",
     "convert:csv": "node convert-csv.js"
   },
   "devDependencies": {

@@ -14,23 +14,25 @@ function redact(text, config) {
   return text;
 }
 
-async function openReport({ headed = false } = {}) {
+async function openReport({ headed = false, timeoutMs = 15 * 60 * 1000 } = {}) {
   const config = loadConfig();
   const context = await chromium.launchPersistentContext(path.join(__dirname, '.playwright/profile'), {
     headless: !headed,
+    timeout: timeoutMs,
     acceptDownloads: true,
     viewport: { width: 1920, height: 1080 }
   });
+  context.setDefaultTimeout(timeoutMs);
+  context.setDefaultNavigationTimeout(timeoutMs);
   try {
     const page = context.pages()[0] || await context.newPage();
-    page.setDefaultTimeout(30000);
     console.log('Opening FusionSolar login.');
     await page.goto(config.loginPage, { waitUntil: 'domcontentloaded' });
     // The login form can take a moment to mount; a saved session may instead
     // redirect straight into the application.
     await Promise.race([
-      page.locator('#username').waitFor({ state: 'visible', timeout: 60000 }),
-      page.waitForURL(url => url.pathname.includes('/pvmswebsite/'), { timeout: 60000 })
+      page.locator('#username').waitFor({ state: 'visible' }),
+      page.waitForURL(url => url.pathname.includes('/pvmswebsite/'))
     ]);
     if (await page.locator('#username').isVisible()) {
       console.log('Filling login form.');
@@ -39,16 +41,16 @@ async function openReport({ headed = false } = {}) {
       console.log('Submitting login form.');
       await page.locator('#submitDataverify').click();
       console.log('Waiting for authenticated application.');
-      await page.locator('#username').waitFor({ state: 'hidden', timeout: 60000 });
-      await page.waitForURL(url => url.pathname.includes('/pvmswebsite/'), { timeout: 60000 });
+      await page.locator('#username').waitFor({ state: 'hidden' });
+      await page.waitForURL(url => url.pathname.includes('/pvmswebsite/'));
     }
     console.log('Opening Plant Report.');
     // Wait for the initial plant redirect to finish before selecting a route;
     // navigating earlier lets startup overwrite the requested report page.
-    await page.getByText('Grid connection date', { exact: true }).waitFor({ timeout: 60000 });
+    await page.getByText('Grid connection date', { exact: true }).waitFor();
     await page.evaluate(hash => { window.location.hash = hash; }, new URL(REPORT_URL).hash);
     let report;
-    const deadline = Date.now() + 60000;
+    const deadline = Date.now() + timeoutMs;
     while (!report && Date.now() < deadline) {
       for (const frame of page.frames()) {
         if (await frame.getByText('Statistical period', { exact: true }).first().isVisible().catch(() => false)) {
