@@ -225,6 +225,13 @@ Daily yield is probed at **32114** in this iteration. The earlier tester used
 confirmed working (2.99 kWh). Unknown device-status codes are left numeric in
 one-shot output.
 
+## FusionSolar browser automation (development computer)
+
+Playwright and all report extraction code live in
+[`report_exporter/`](report_exporter/README.md), separately from the
+dependency-free MQTT bridge on the Pi. See that directory's README for setup
+and browser commands.
+
 ## Files
 
 - `huawei-read.js`: dependency-free Node 12 snapshot reader and MQTT/HA bridge.
