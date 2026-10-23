@@ -1,6 +1,8 @@
 'use strict';
 
+const { log } = require('./logger');
+
 require('./export-reports').run(['--today', ...process.argv.slice(2)]).catch(error => {
-  console.error(error.message);
+  log.error(error.message);
   process.exitCode = 1;
 });

@@ -13,6 +13,18 @@ test('inclusive bounds, limits, and long timeouts parse without starting a brows
   assert.equal(config.maxDays, 2);
   assert.equal(config.timeoutMs, 1800000);
   assert.equal(options([]).timeoutMs, 900000);
+  assert.equal(options([]).actionTimeoutMs, 30000);
+  assert.equal(options([]).stepTimeoutMs, 120000);
+  const deadlines = options(['--action-timeout-seconds', '10', '--step-timeout-seconds', '90', '--timeout-minutes', '30']);
+  assert.equal(deadlines.actionTimeoutMs, 10000);
+  assert.equal(deadlines.stepTimeoutMs, 90000);
+  assert.equal(deadlines.timeoutMs, 1800000);
+  assert.throws(() => options(['--action-timeout-seconds', '0']));
+  assert.throws(() => options(['--step-timeout-seconds', 'NaN']));
+  assert.equal(options([]).attempts, 3);
+  assert.equal(options(['--attempts', '5']).attempts, 5);
+  assert.throws(() => options(['--attempts', '0']));
+  assert.throws(() => options(['--attempts', '11']));
   assert.throws(() => options(['--from', '2024-03-02', '--to', '2024-03-01']));
   assert.throws(() => options(['--today', '--from', '2024-03-01']));
   assert.throws(() => options(['--max-days', '0']));
