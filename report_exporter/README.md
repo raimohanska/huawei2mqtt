@@ -32,7 +32,7 @@ npm run export:reports
 The default run has two phases:
 
 1. **Hourly readings:** select **By day** and **100 / page**, work backwards from
-   today, and skip existing hourly CSVs. At the **first confirmed no-data day**,
+   today, and skip complete hourly CSVs for finished days. At the **first confirmed no-data day**,
    stop querying older hourly dates and switch to the second phase.
 2. **Daily yields:** select **By month** and **100 / page**. Download monthly
    reports containing one row per day, starting at the **latest requested month**
@@ -101,12 +101,23 @@ exports/134568461/YYYY/MM/YYYY-MM-DD.csv       # hourly rows for one day
 exports/134568461/daily/YYYY/YYYY-MM.csv       # daily rows for one month
 ```
 
-The **final CSV is the completion marker**. An hourly CSV does not mark its month
-as downloaded, and a monthly daily-yield CSV does not mark hourly dates complete.
-Both types are validated before skipping: required headers, matching period,
-row width, numeric/blank yields, and row counts. Hourly files allow 1–25 rows;
-monthly files allow up to the number of calendar days in that month and reject
-duplicate or invalid dates.
+The **final CSV is checked for completeness before it acts as a skip marker**.
+An hourly CSV does not mark its month as downloaded, and a monthly daily-yield
+CSV does not mark hourly dates complete. Both types are validated for required
+headers, matching period, row width, and numeric/blank yields.
+
+- **Hourly files:** require every actual hour in the plant's Helsinki-local day.
+  This is normally 24 rows, 23 at the spring DST change, and 25 at the autumn
+  change. The script checks hour coverage and repeated-hour counts, not just the
+  number of rows, so a duplicate ordinary hour cannot hide a missing hour.
+- **Monthly files:** require every calendar day of the month (28–31 rows,
+  including leap day), with no duplicate or invalid dates.
+- **Current day and month:** always refreshed, even if their rows have been
+  prepopulated, because readings may still change. Plant-local time determines
+  whether the period has ended.
+- **Older incomplete files:** retained but fetched again; only complete files
+  for finished periods are skipped. Missing yield values are kept distinct from
+  missing rows, since blank nighttime readings are legitimate.
 
 Downloads first use `.partial.xlsx`. Conversion writes `.csv.partial`, checks
 its contents and row count against the report UI, publishes the final CSV by
@@ -114,15 +125,17 @@ atomic rename, then **deletes the XLSX**. Failed conversions retain the source;
 partial files never count as completed reports.
 
 When revisiting old downloads, redundant XLSX files are removed after validating
-their CSV. An XLSX-only report is converted locally before being skipped. Invalid
-final CSVs stop the run rather than being silently overwritten. Existing CSVs
-are validated without opening the browser when explicit date bounds are supplied.
+their CSV. An XLSX-only report is converted locally and then checked for
+completeness. Invalid final CSVs stop the run rather than being silently
+overwritten. Existing CSVs are checked locally; only missing, incomplete, or
+current-period reports need the browser.
 
 CSV conversion retains every report column, omits the decorative title/empty
 worksheets, preserves timestamps and missing-versus-zero readings, and uses
 UTF-8, comma separators, standard quoting, and CRLF line endings. Current-day
-and current-month files are snapshots of the readings available at export time;
-like other completed CSVs, they are not automatically refreshed.
+and current-month files are snapshots of the readings available at export time.
+They are saved even when partial and refreshed on each subsequent run. A partial
+CSV is replaced atomically only after the new report has converted successfully.
 
 Standalone conversion also validates and saves the CSV before deleting the XLSX:
 
@@ -186,7 +199,7 @@ Only bounded live trials have been run by the coding agent:
 
 Offline tests cover automatic phase transitions, independent resume markers,
 hourly/monthly bounds and limits, month/year/DST boundaries, calendar validity,
-CSV-only completion, successful-conversion cleanup, failed/partial reports,
+complete-versus-partial CSVs, current-period refresh, successful-conversion cleanup, failed/partial reports,
 timeouts, retry cancellation, and concise timestamped logging.
 
 ```sh

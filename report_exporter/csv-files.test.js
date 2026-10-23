@@ -10,10 +10,16 @@ const { convertToCsv } = require('./convert-csv');
 const { validateCsv } = require('./validate-csv');
 const { useExisting } = require('./downloads');
 const { log, timestamp, createSkipReporter } = require('./logger');
+const { expectedHourlySlots } = require('./dates');
 
 const DATE = '2026-10-21';
 const HEADER = 'Statistical Period,PV Yield (kWh),Inverter Yield (kWh)\r\n';
 const CSV = HEADER + DATE + ' 00:00:00 DST,0,0\r\n' + DATE + ' 01:00:00 DST,,\r\n';
+const NOW = Date.parse('2026-11-02T12:00:00Z');
+const HOURS = Array.from({ length: 24 }, (_, hour) => String(hour).padStart(2, '0'));
+const hourlyCsv = (date, hours = HOURS) => HEADER + hours.map(hour => date + ' ' + hour + ':00:00,0,0\r\n').join('');
+const monthlyCsv = (month, count) => HEADER + Array.from({ length: count }, (_, index) =>
+  month + '-' + String(index + 1).padStart(2, '0') + ',0,0\r\n').join('');
 
 async function temporaryTest(work) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fusionsolar-csv-'));
@@ -68,23 +74,24 @@ test('CSV alone skips a day; validated CSV also removes redundant legacy XLSX', 
     const directory = path.join(root, '2026', '10');
     await fs.mkdir(directory, { recursive: true });
     const csv = path.join(directory, DATE + '.csv');
-    await fs.writeFile(csv, CSV);
-    assert.equal(await useExisting(DATE, { root }), true);
+    const complete = hourlyCsv(DATE);
+    await fs.writeFile(csv, complete);
+    assert.equal(await useExisting(DATE, { root, now: NOW }), true);
     const legacy = path.join(directory, DATE + '.xlsx');
     await fs.writeFile(legacy, 'obsolete workbook');
-    assert.equal(await useExisting(DATE, { root }), true);
+    assert.equal(await useExisting(DATE, { root, now: NOW }), true);
     await assert.rejects(fs.access(legacy), { code: 'ENOENT' });
-    assert.equal(await fs.readFile(csv, 'utf8'), CSV);
+    assert.equal(await fs.readFile(csv, 'utf8'), complete);
   });
 });
 
-test('legacy XLSX without CSV is migrated locally and removed', async () => {
+test('partial legacy XLSX is converted and removed but its day still requires refresh', async () => {
   await temporaryTest(async root => {
     const directory = path.join(root, '2026', '10');
     await fs.mkdir(directory, { recursive: true });
     const legacy = path.join(directory, DATE + '.xlsx');
     await workbook(legacy);
-    assert.equal(await useExisting(DATE, { root }), true);
+    assert.equal(await useExisting(DATE, { root, now: NOW }), false);
     await assert.rejects(fs.access(legacy), { code: 'ENOENT' });
     assert.equal((await validateCsv(path.join(directory, DATE + '.csv'), DATE)).rows, 2);
   });
@@ -183,13 +190,85 @@ test('monthly CSVs have separate storage and never masquerade as hourly completi
     await fs.mkdir(hourly, { recursive: true });
     await fs.mkdir(daily, { recursive: true });
     const hourlyCsv = path.join(hourly, '2026-06-01.csv');
-    await fs.writeFile(hourlyCsv, CSV.replaceAll(DATE, '2026-06-01'));
+    await fs.writeFile(hourlyCsv, HEADER + HOURS.map(hour => '2026-06-01 ' + hour + ':00:00,0,0\r\n').join(''));
     assert.equal(await useExisting('2026-06', { root }), false);
     await fs.writeFile(path.join(daily, '2026-06.csv'), HEADER + '2026-06-01,0,0\r\n2026-06-02,1.5,1.5\r\n');
-    assert.equal(await useExisting('2026-06', { root }), true);
-    assert.equal(await useExisting('2026-06-01', { root }), true);
+    assert.equal(await useExisting('2026-06', { root, now: NOW }), false);
+    await fs.writeFile(path.join(daily, '2026-06.csv'), monthlyCsv('2026-06', 30));
+    assert.equal(await useExisting('2026-06', { root, now: NOW }), true);
+    assert.equal(await useExisting('2026-06-01', { root, now: NOW }), true);
     assert.equal(await useExisting('2026-06-02', { root }), false);
     await fs.access(hourlyCsv);
+  });
+});
+
+test('past hourly files with missing or duplicated hours are refreshed rather than skipped', async () => {
+  await temporaryTest(async root => {
+    const directory = path.join(root, '2026', '10');
+    await fs.mkdir(directory, { recursive: true });
+    const csv = path.join(directory, DATE + '.csv');
+    for (const hours of [HOURS.slice(0, 23), HOURS.map(hour => hour === '13' ? '12' : hour)]) {
+      const content = hourlyCsv(DATE, hours);
+      await fs.writeFile(csv, content);
+      const result = await validateCsv(csv, DATE, { now: NOW });
+      assert.equal(result.expectedRows, 24);
+      assert.equal(result.rowsComplete, false);
+      assert.equal(await useExisting(DATE, { root, now: NOW }), false);
+      assert.equal(await fs.readFile(csv, 'utf8'), content);
+    }
+    await fs.writeFile(csv, hourlyCsv(DATE));
+    assert.equal(await useExisting(DATE, { root, now: NOW }), true);
+  });
+});
+
+test('hourly completeness accounts for 23/25-hour Helsinki DST days', async () => {
+  await temporaryTest(async root => {
+    const csv = path.join(root, 'report.csv');
+    const spring = '2026-03-29';
+    const autumn = '2026-10-25';
+    assert.equal(expectedHourlySlots(spring).length, 23);
+    assert.ok(!expectedHourlySlots(spring).includes(spring + ' 03:00:00'));
+    assert.equal(expectedHourlySlots(autumn).length, 25);
+    assert.equal(expectedHourlySlots(autumn).filter(slot => slot.endsWith('03:00:00')).length, 2);
+    await fs.writeFile(csv, hourlyCsv(spring, HOURS.filter(hour => hour !== '03')));
+    assert.equal((await validateCsv(csv, spring, { now: NOW })).complete, true);
+    await fs.writeFile(csv, hourlyCsv(autumn));
+    assert.equal((await validateCsv(csv, autumn, { now: NOW })).complete, false);
+    const autumnHours = [...HOURS];
+    autumnHours.splice(4, 0, '03');
+    await fs.writeFile(csv, hourlyCsv(autumn, autumnHours));
+    assert.equal((await validateCsv(csv, autumn, { now: NOW })).complete, true);
+  });
+});
+
+test('monthly completeness requires every day, including leap day', async () => {
+  await temporaryTest(async root => {
+    const directory = path.join(root, 'daily', '2024');
+    await fs.mkdir(directory, { recursive: true });
+    const csv = path.join(directory, '2024-02.csv');
+    await fs.writeFile(csv, monthlyCsv('2024-02', 28));
+    assert.equal((await validateCsv(csv, '2024-02', { now: NOW })).expectedRows, 29);
+    assert.equal(await useExisting('2024-02', { root, now: NOW }), false);
+    await fs.writeFile(csv, monthlyCsv('2024-02', 29));
+    assert.equal(await useExisting('2024-02', { root, now: NOW }), true);
+    await fs.writeFile(csv, monthlyCsv('2024-02', 29).replace('2024-02-15,0,0\r\n', ''));
+    assert.equal(await useExisting('2024-02', { root, now: NOW }), false);
+  });
+});
+
+test('current day and month are refreshed even if all rows have been prepopulated', async () => {
+  await temporaryTest(async root => {
+    const hourly = path.join(root, '2026', '10');
+    const daily = path.join(root, 'daily', '2026');
+    await fs.mkdir(hourly, { recursive: true });
+    await fs.mkdir(daily, { recursive: true });
+    await fs.writeFile(path.join(hourly, '2026-10-23.csv'), hourlyCsv('2026-10-23'));
+    await fs.writeFile(path.join(daily, '2026-10.csv'), monthlyCsv('2026-10', 31));
+    const current = Date.parse('2026-10-23T12:00:00Z');
+    assert.equal(await useExisting('2026-10-23', { root, now: current }), false);
+    assert.equal(await useExisting('2026-10', { root, now: current }), false);
+    assert.equal(await useExisting('2026-10-23', { root, now: NOW }), true);
+    assert.equal(await useExisting('2026-10', { root, now: NOW }), true);
   });
 });
 

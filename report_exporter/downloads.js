@@ -21,14 +21,15 @@ async function removeIfPresent(filename) {
   }
 }
 
-async function useExisting(date, { root = path.join(__dirname, 'exports', '134568461') } = {}) {
+async function useExisting(date, { root = path.join(__dirname, 'exports', '134568461'), now } = {}) {
   const destination = destinationFor(date, root);
   const legacyXlsx = destination.slice(0, -4) + '.xlsx';
   let csvExists = false;
+  let validated;
   try { await fs.access(destination); csvExists = true; }
   catch (error) { if (error.code !== 'ENOENT') throw error; }
   if (csvExists) {
-    try { await validateCsv(destination, date); }
+    try { validated = await validateCsv(destination, date, { now }); }
     catch { throw new ExporterError('EXISTING_CSV_INVALID', {}, { retryable: false }); }
     // Older runs kept the workbook. A validated CSV makes it redundant.
     try {
@@ -43,10 +44,10 @@ async function useExisting(date, { root = path.join(__dirname, 'exports', '13456
     }
     // Migrate old downloads without querying FusionSolar. Conversion validates
     // and publishes the CSV before deleting the legacy workbook.
-    try { await convertToCsv(legacyXlsx, date); }
+    try { validated = await convertToCsv(legacyXlsx, date, { now }); }
     catch { throw new ExporterError('EXISTING_WORKBOOK_INVALID', {}, { retryable: false }); }
   }
-  return true;
+  return validated.complete;
 }
 
 async function downloadDay(session, date, expectedRows, timeoutMs) {

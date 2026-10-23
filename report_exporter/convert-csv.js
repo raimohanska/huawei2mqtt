@@ -11,7 +11,7 @@ function csvCell(value) {
   return /[",\r\n]/.test(text) ? '"' + text.replace(/"/g, '""') + '"' : text;
 }
 
-async function convertToCsv(xlsxPath, expectedPeriod, { csvPath = xlsxPath.slice(0, -5) + '.csv', expectedRows } = {}) {
+async function convertToCsv(xlsxPath, expectedPeriod, { csvPath = xlsxPath.slice(0, -5) + '.csv', expectedRows, now } = {}) {
   if (!xlsxPath.toLowerCase().endsWith('.xlsx')) throw new Error('Expected an XLSX file.');
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.readFile(xlsxPath);
@@ -43,7 +43,7 @@ async function convertToCsv(xlsxPath, expectedPeriod, { csvPath = xlsxPath.slice
     headers.map((_, index) => csvCell(row[index])).join(',')).join('\r\n') + '\r\n';
   const temporary = csvPath + '.partial';
   await fs.writeFile(temporary, csv, 'utf8');
-  const validated = await validateCsv(temporary, expectedPeriod);
+  const validated = await validateCsv(temporary, expectedPeriod, { now });
   if (expectedRows !== undefined && validated.rows !== expectedRows) {
     throw new Error('Converted rows do not match the report.');
   }
