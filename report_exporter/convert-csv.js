@@ -11,7 +11,7 @@ function csvCell(value) {
   return /[",\r\n]/.test(text) ? '"' + text.replace(/"/g, '""') + '"' : text;
 }
 
-async function convertToCsv(xlsxPath, expectedDate, { csvPath = xlsxPath.slice(0, -5) + '.csv', expectedRows } = {}) {
+async function convertToCsv(xlsxPath, expectedPeriod, { csvPath = xlsxPath.slice(0, -5) + '.csv', expectedRows } = {}) {
   if (!xlsxPath.toLowerCase().endsWith('.xlsx')) throw new Error('Expected an XLSX file.');
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.readFile(xlsxPath);
@@ -32,11 +32,10 @@ async function convertToCsv(xlsxPath, expectedDate, { csvPath = xlsxPath.slice(0
   const { data, headerIndex } = reports[0];
   const headers = data[headerIndex].map(cell => String(cell === null ? '' : cell).trim());
   const rows = data.slice(headerIndex + 1).filter(row => row.some(cell => cell !== null && cell !== ''));
-  if (rows.length === 0) throw new Error('The plant report contains no hourly rows.');
+  if (rows.length === 0) throw new Error('The plant report contains no rows.');
   for (const row of rows) {
-    if (typeof row[0] !== 'string' || !/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/.test(row[0]) ||
-        (expectedDate && !row[0].startsWith(expectedDate + ' ')) || row.length > headers.length) {
-      throw new Error('The workbook does not match the expected daily report.');
+    if (typeof row[0] !== 'string' || !/^\d{4}-\d{2}-\d{2}(?:\s|$)/.test(row[0]) || row.length > headers.length) {
+      throw new Error('The workbook does not contain a dated plant report.');
     }
   }
   // Omit the decorative title row, retain every report column, and pad blanks.
@@ -44,20 +43,20 @@ async function convertToCsv(xlsxPath, expectedDate, { csvPath = xlsxPath.slice(0
     headers.map((_, index) => csvCell(row[index])).join(',')).join('\r\n') + '\r\n';
   const temporary = csvPath + '.partial';
   await fs.writeFile(temporary, csv, 'utf8');
-  const validated = await validateCsv(temporary, expectedDate);
+  const validated = await validateCsv(temporary, expectedPeriod);
   if (expectedRows !== undefined && validated.rows !== expectedRows) {
-    throw new Error('Converted hourly rows do not match the report.');
+    throw new Error('Converted rows do not match the report.');
   }
   await fs.rename(temporary, csvPath);
   // Publish and validate the complete CSV before removing the source. Failed
   // conversions keep the XLSX, and partial CSVs never act as completion markers.
   await fs.unlink(xlsxPath);
-  return { csvPath, rows: rows.length, columns: headers.length };
+  return { ...validated, csvPath };
 }
 
 function logConversion(result) {
   log.info('Converted: ' + path.relative(__dirname, result.csvPath) +
-    ' (' + result.rows + ' hourly rows, ' + result.columns + ' columns)');
+    ' (' + result.rows + ' ' + result.granularity + ' rows, ' + result.columns + ' columns)');
 }
 
 if (require.main === module) {
@@ -67,7 +66,7 @@ if (require.main === module) {
     process.exitCode = 1;
   } else {
     const date = path.basename(filename, '.xlsx');
-    convertToCsv(path.resolve(filename), /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : undefined)
+    convertToCsv(path.resolve(filename), /^\d{4}-\d{2}(?:-\d{2})?$/.test(date) ? date : undefined)
       .then(logConversion)
       .catch(() => {
         log.error('CSV conversion failed. Check that the XLSX contains a daily plant report.');

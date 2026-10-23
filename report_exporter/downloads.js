@@ -9,6 +9,7 @@ const { validateCsv } = require('./validate-csv');
 const { runStep } = require('./steps');
 
 function destinationFor(date, root) {
+  if (date.length === 7) return path.join(root, 'daily', date.slice(0, 4), date + '.csv');
   return path.join(root, date.slice(0, 4), date.slice(5, 7), date + '.csv');
 }
 

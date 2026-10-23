@@ -20,7 +20,7 @@ const log = {
   error: message => emit('ERROR', message)
 };
 
-function createSkipReporter(write = log.info) {
+function createSkipReporter(write = log.info, unit = 'day') {
   let count = 0;
   let oldest;
   return {
@@ -28,7 +28,7 @@ function createSkipReporter(write = log.info) {
     flush: nextDate => {
       if (!count) return;
       write('Skipping ' + (nextDate ? 'to ' + nextDate : 'through ' + oldest) + ' because ' + count +
-        (count === 1 ? ' day already has a valid CSV.' : ' days already have valid CSVs.'));
+        (count === 1 ? ' ' + unit + ' already has a valid CSV.' : ' ' + unit + 's already have valid CSVs.'));
       count = 0;
     }
   };

@@ -8,7 +8,8 @@ const REPORT_PATTERN = '**/rest/pvms/web/report/v1/station/station-kpi-list';
 function matchesDate(request, date) {
   try {
     const body = request.postDataJSON();
-    return Number(body.statDim) === 2 && plantDate(body.statTime) === date;
+    const monthly = date.length === 7;
+    return Number(body.statDim) === (monthly ? 4 : 2) && plantDate(body.statTime).slice(0, monthly ? 7 : 10) === date;
   } catch { return false; }
 }
 

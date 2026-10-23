@@ -155,3 +155,55 @@ test('consecutive skipped dates produce one summary, including all-skipped bound
   skipped.flush();
   assert.equal(lines[1], 'Skipping through 2026-10-18 because 1 day already has a valid CSV.');
 });
+
+test('monthly workbooks convert daily dates and remove XLSX only after validating the month', async () => {
+  await temporaryTest(async root => {
+    const source = path.join(root, '2026-06.xlsx');
+    const book = new ExcelJS.Workbook();
+    const sheet = book.addWorksheet('Report');
+    sheet.addRow(['Plant Report_Test']);
+    sheet.addRow(['Statistical Period', 'PV Yield (kWh)', ' Inverter Yield (kWh)']);
+    for (let day = 1; day <= 30; day++) sheet.addRow(['2026-06-' + String(day).padStart(2, '0'), day === 1 ? 0 : 1.25, null]);
+    await book.xlsx.writeFile(source);
+    await assert.rejects(convertToCsv(source, '2026-05'));
+    await fs.access(source);
+    const converted = await convertToCsv(source, '2026-06', { expectedRows: 30 });
+    assert.equal(converted.rows, 30);
+    assert.equal(converted.granularity, 'daily');
+    await assert.rejects(fs.access(source), { code: 'ENOENT' });
+    assert.equal((await validateCsv(converted.csvPath, '2026-06')).granularity, 'daily');
+    await assert.rejects(validateCsv(converted.csvPath, '2026-06-01'));
+  });
+});
+
+test('monthly CSVs have separate storage and never masquerade as hourly completion', async () => {
+  await temporaryTest(async root => {
+    const hourly = path.join(root, '2026', '06');
+    const daily = path.join(root, 'daily', '2026');
+    await fs.mkdir(hourly, { recursive: true });
+    await fs.mkdir(daily, { recursive: true });
+    const hourlyCsv = path.join(hourly, '2026-06-01.csv');
+    await fs.writeFile(hourlyCsv, CSV.replaceAll(DATE, '2026-06-01'));
+    assert.equal(await useExisting('2026-06', { root }), false);
+    await fs.writeFile(path.join(daily, '2026-06.csv'), HEADER + '2026-06-01,0,0\r\n2026-06-02,1.5,1.5\r\n');
+    assert.equal(await useExisting('2026-06', { root }), true);
+    assert.equal(await useExisting('2026-06-01', { root }), true);
+    assert.equal(await useExisting('2026-06-02', { root }), false);
+    await fs.access(hourlyCsv);
+  });
+});
+
+test('monthly CSV validation checks real calendar dates, duplicates, and leap days', async () => {
+  await temporaryTest(async root => {
+    const csv = path.join(root, 'month.csv');
+    for (const rows of ['2026-06-31,1,1\r\n', '2026-06-01,1,1\r\n2026-06-01,2,2\r\n',
+      '2026-05-31,1,1\r\n', '2026-06-01 00:00:00 DST,1,1\r\n']) {
+      await fs.writeFile(csv, HEADER + rows);
+      await assert.rejects(validateCsv(csv, '2026-06'));
+    }
+    await fs.writeFile(csv, HEADER + '2024-02-29,0,0\r\n');
+    assert.equal((await validateCsv(csv, '2024-02')).rows, 1);
+    await fs.writeFile(csv, HEADER + '2025-02-29,0,0\r\n');
+    await assert.rejects(validateCsv(csv, '2025-02'));
+  });
+});

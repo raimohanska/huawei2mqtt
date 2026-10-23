@@ -3,8 +3,9 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { options, run } = require('./export-reports');
-const { validateDate, previousDate, plantDate } = require('./dates');
+const { validateDate, previousDate, plantDate, validateMonth, previousMonth, daysInMonth } = require('./dates');
 const { validateReportResponse } = require('./report-ui');
+const { matchesDate } = require('./report-response');
 
 test('inclusive bounds, limits, and long timeouts parse without starting a browser', () => {
   const config = options(['--from', '2024-02-29', '--to', '2024-03-01', '--max-days', '2', '--timeout-minutes', '30']);
@@ -29,6 +30,12 @@ test('inclusive bounds, limits, and long timeouts parse without starting a brows
   assert.throws(() => options(['--today', '--from', '2024-03-01']));
   assert.throws(() => options(['--max-days', '0']));
   assert.throws(() => options(['--timeout-minutes', 'NaN']));
+  assert.equal(options(['--monthly-only', '--max-months', '2']).maxMonths, 2);
+  assert.equal(options(['--today']).hourlyOnly, true);
+  assert.throws(() => options(['--monthly-only', '--hourly-only']));
+  assert.throws(() => options(['--monthly-only', '--max-days', '2']));
+  assert.throws(() => options(['--monthly-only', '--today']));
+  assert.throws(() => options(['--max-months', '0']));
 });
 
 test('date traversal handles leap days and year/month/DST boundaries', () => {
@@ -61,57 +68,103 @@ test('hourly placeholders, zero yields, and 25-hour DST days do not stop travers
   assert.throws(() => validateReportResponse({ ...report, data: { total: 25, list: Array(10).fill({}) } }));
 });
 
-async function simulateRun(argv, { existingIndex = -1, availableIndex = -1 } = {}) {
+test('month traversal and request matching handle year boundaries, leap years, and granularity', () => {
+  assert.equal(previousMonth('2026-01'), '2025-12');
+  assert.equal(previousMonth('2024-03'), '2024-02');
+  assert.equal(daysInMonth('2024-02'), 29);
+  assert.equal(daysInMonth('2025-02'), 28);
+  assert.throws(() => validateMonth('2026-13'));
+  const request = dimension => ({ postDataJSON: () => ({ statDim: dimension, statTime: 1780261200000 }) });
+  assert.equal(matchesDate(request('4'), '2026-06'), true);
+  assert.equal(matchesDate(request('4'), '2026-05'), false);
+  assert.equal(matchesDate(request('2'), '2026-06'), false);
+  assert.equal(matchesDate(request('4'), '2026-06-01'), false);
+});
+
+async function simulateRun(argv, { existing = () => false, hourly = () => true, monthly = () => true } = {}) {
   const latest = '2026-12-31';
-  const indexOf = date => (Date.parse(latest + 'T00:00:00Z') - Date.parse(date + 'T00:00:00Z')) / 86400000;
   const queries = [];
+  const months = [];
+  const modes = [];
   const downloads = [];
   const lines = [];
   const original = console.log;
   console.log = line => lines.push(line);
   try {
-    await run(['--to', latest, ...argv], {
+    await run(['--to', latest, '--attempts', '1', ...argv], {
       openReport: async options => {
         const context = { close: async () => {} };
         options.onContext(context);
         return { context };
       },
-      prepareReport: async () => {},
-      useExisting: async date => indexOf(date) === existingIndex,
+      prepareReport: async (_, granularity) => modes.push(granularity),
+      useExisting: async date => existing(date),
       queryDay: async (_, date) => {
         queries.push(date);
-        return { empty: indexOf(date) !== availableIndex, total: 24 };
+        return { empty: hourly(date), total: 24 };
+      },
+      queryMonth: async (_, month) => {
+        months.push(month);
+        return { empty: monthly(month), total: daysInMonth(month) };
       },
       downloadDay: async (_, date) => downloads.push(date)
     });
   } finally { console.log = original; }
-  return { queries, downloads, lines };
+  return { queries, months, modes, downloads, lines };
 }
 
-test('the real traversal stops on the 30th confirmed empty day, not the first or 31st', async () => {
-  const result = await simulateRun(['--max-days', '31']);
-  assert.equal(result.queries.length, 30);
-  assert.equal(result.queries[29], '2026-12-02');
-  assert.deepEqual(result.downloads, []);
-  assert.ok(result.lines.at(-1).includes('30 consecutive no-data days ending 2026-12-02'));
-  assert.ok(result.lines.at(-1).includes('Visited=30, downloaded=0, skipped=0, empty=30'));
+test('first missing hourly day switches immediately to daily-yield months, stopping on first empty month', async () => {
+  const result = await simulateRun(['--max-days', '3', '--max-months', '5'], {
+    monthly: month => month === '2026-10'
+  });
+  assert.deepEqual(result.queries, ['2026-12-31']);
+  assert.deepEqual(result.months, ['2026-12', '2026-11', '2026-10']);
+  assert.deepEqual(result.downloads, ['2026-12', '2026-11']);
+  assert.deepEqual(result.modes, ['hourly', 'daily']);
+  assert.ok(result.lines.at(-1).includes('no daily data in month 2026-10'));
 });
 
-test('both existing CSVs and newly exported days reset consecutive no-data history', async () => {
-  // 20 empty days, one existing CSV, 20 empty days, one new report, then 30 empty.
-  const result = await simulateRun(['--max-days', '100'], { existingIndex: 20, availableIndex: 41 });
-  assert.equal(result.queries.length, 71);
-  assert.deepEqual(result.downloads, ['2026-11-20']);
-  assert.equal(result.queries.at(-1), '2026-10-21');
-  assert.ok(result.lines.at(-1).includes('30 consecutive no-data days ending 2026-10-21'));
-  assert.ok(result.lines.at(-1).includes('Visited=72, downloaded=1, skipped=1, empty=70'));
+test('resume skips hourly and monthly CSVs independently and starts months at the newest requested month', async () => {
+  const existing = new Set(['2026-12-31', '2026-12-30', '2026-12']);
+  const result = await simulateRun(['--max-days', '5', '--max-months', '5'], {
+    existing: period => existing.has(period), monthly: month => month === '2026-10'
+  });
+  assert.deepEqual(result.queries, ['2026-12-29']);
+  assert.deepEqual(result.months, ['2026-11', '2026-10']);
+  assert.deepEqual(result.downloads, ['2026-11']);
+  assert.ok(result.lines.some(line => line.includes('Skipping to 2026-12-29 because 2 days')));
+  assert.ok(result.lines.some(line => line.includes('Skipping to 2026-11 because 1 month')));
 });
 
-test('explicit date bounds and max-days still finish before 30 empty days', async () => {
-  const bounded = await simulateRun(['--from', '2026-12-29']);
+test('hourly date bounds and max-days do not start an unbounded monthly loop', async () => {
+  const bounded = await simulateRun(['--from', '2026-12-29'], { hourly: () => false });
   assert.equal(bounded.queries.length, 3);
+  assert.deepEqual(bounded.months, []);
   assert.ok(bounded.lines.at(-1).includes('date range completed'));
-  const limited = await simulateRun(['--max-days', '2']);
+  const limited = await simulateRun(['--max-days', '2'], { hourly: () => false });
   assert.equal(limited.queries.length, 2);
+  assert.deepEqual(limited.months, []);
   assert.ok(limited.lines.at(-1).includes('max-days limit reached'));
+});
+
+test('monthly-only respects month bounds and max-months without querying hourly data', async () => {
+  const bounded = await simulateRun(['--monthly-only', '--from', '2026-11-15'], { monthly: () => false });
+  assert.deepEqual(bounded.queries, []);
+  assert.deepEqual(bounded.months, ['2026-12', '2026-11']);
+  assert.deepEqual(bounded.modes, ['daily']);
+  assert.ok(bounded.lines.at(-1).includes('monthly date range completed'));
+  const limited = await simulateRun(['--monthly-only', '--max-months', '2'], { monthly: () => false });
+  assert.deepEqual(limited.months, ['2026-12', '2026-11']);
+  assert.ok(limited.lines.at(-1).includes('max-months limit reached'));
+});
+
+test('an all-existing monthly range avoids opening the browser and hourly-only disables fallback', async () => {
+  const skipped = await simulateRun(['--monthly-only', '--max-months', '2'], { existing: () => true });
+  assert.deepEqual(skipped.queries, []);
+  assert.deepEqual(skipped.months, []);
+  assert.deepEqual(skipped.modes, []);
+  assert.ok(skipped.lines.at(-1).includes('skipped=2'));
+  const hourly = await simulateRun(['--hourly-only', '--max-days', '2']);
+  assert.deepEqual(hourly.queries, ['2026-12-31']);
+  assert.deepEqual(hourly.months, []);
 });

@@ -1,9 +1,9 @@
 'use strict';
 
 const ExcelJS = require('exceljs');
-const { validateDate } = require('./dates');
+const { validateDate, validateMonth, daysInMonth } = require('./dates');
 
-async function validateCsv(csvPath, expectedDate) {
+async function validateCsv(csvPath, expectedPeriod) {
   const workbook = new ExcelJS.Workbook();
   // Use the CSV reader already provided by ExcelJS, preserving timestamp text
   // and blank/zero values rather than interpreting them as dates or numbers.
@@ -15,14 +15,24 @@ async function validateCsv(csvPath, expectedDate) {
     throw new Error('CSV does not contain the expected plant report headers.');
   }
   const rows = sheet.rowCount - 1;
-  if (rows < 1 || rows > 25) throw new Error('CSV must contain 1–25 hourly rows.');
-  const date = expectedDate || sheet.getRow(2).getCell(1).text.slice(0, 10);
-  validateDate(date);
-  const timestamp = new RegExp('^' + date + ' (?:[01]\\d|2[0-3]):00:00(?: (?:DST|ST))?$');
+  const first = sheet.getRow(2).getCell(1).text;
+  const daily = expectedPeriod ? expectedPeriod.length === 7 : /^\d{4}-\d{2}-\d{2}(?: (?:DST|ST))?$/.test(first);
+  const period = expectedPeriod || first.slice(0, daily ? 7 : 10);
+  if (daily) validateMonth(period); else validateDate(period);
+  if (rows < 1 || rows > (daily ? daysInMonth(period) : 25)) throw new Error('CSV contains an invalid number of report rows.');
+  const timestamp = daily ? new RegExp('^' + period + '-\\d{2}(?: (?:DST|ST))?$') :
+    new RegExp('^' + period + ' (?:[01]\\d|2[0-3]):00:00(?: (?:DST|ST))?$');
+  const dates = new Set();
   for (let index = 2; index <= sheet.rowCount; index++) {
     const row = sheet.getRow(index);
     if (row.cellCount !== headers.length || !timestamp.test(row.getCell(1).text)) {
       throw new Error('CSV rows do not match the expected date or column count.');
+    }
+    if (daily) {
+      const date = row.getCell(1).text.slice(0, 10);
+      validateDate(date);
+      if (dates.has(date)) throw new Error('Monthly CSV contains a duplicate day.');
+      dates.add(date);
     }
     for (const name of required.slice(1)) {
       const value = row.getCell(headers.indexOf(name) + 1).text;
@@ -31,7 +41,7 @@ async function validateCsv(csvPath, expectedDate) {
       }
     }
   }
-  return { csvPath, rows, columns: headers.length };
+  return { csvPath, rows, columns: headers.length, granularity: daily ? 'daily' : 'hourly' };
 }
 
 module.exports = { validateCsv };
