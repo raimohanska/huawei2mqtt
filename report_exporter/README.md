@@ -37,7 +37,7 @@ npm run export:reports
 ```
 
 This starts at **today in FusionSolar**, works backwards one day at a time, skips
-already-downloaded days, and stops at the **first confirmed no-data day**. Each
+already-downloaded days, and stops after **30 consecutive confirmed no-data days**. Each
 new download is converted to CSV before advancing. Re-run the same command to
 resume; completed days will not be downloaded again. Press **Ctrl+C** to stop.
 Already-running processes keep their loaded code. Restart your current run to
@@ -58,8 +58,9 @@ Limit a run to at most three dates, starting today:
 npm run export:reports -- --max-days 3
 ```
 
-`--max-days` counts all visited dates, including skipped dates. An empty report
-stops the run even if there are dates remaining within the requested range.
+`--max-days` counts all visited dates, including skipped and empty dates. An
+isolated empty report does not stop the run. Date bounds and `--max-days` can
+still finish a run before 30 consecutive empty dates have been seen.
 `--from` and `--to` can also be used individually; omitting `--to` starts today.
 
 ### Today only / visible browser / timeouts
@@ -133,13 +134,17 @@ headers, or credentials.
 - The observed **2021-10-22** no-data state has HTTP 200, `failCode: 0`,
   `success: false`, `message: null`, and an empty list with total zero. The script
   checks that response for the requested plant-local date, plus the UI's
-  **No data**, **Total: 0**, and disabled **Export** button before stopping.
+  **No data**, **Total: 0**, and disabled **Export** button before counting a day
+  as empty. Each confirmed empty day is logged with its current streak, such as
+  `No data 2026-02-15 (1/30 consecutive)`.
 - Nonempty reports are not treated as the end of history, even if all their
   readings are missing or zero. Authentication errors, server errors, rate
   limits, and timeouts trigger recovery and retry; they are not no-data signals.
   If all attempts fail, the run stops with an error and keeps completed files.
-- Stopping at the first empty day assumes that day marks the end of available
-  contiguous history. To inspect dates before a gap, provide an earlier `--to`.
+- Only **30 consecutive empty dates** end history traversal. A valid existing CSV
+  or a newly exported report resets the streak to zero. Isolated gaps are passed
+  over without creating empty CSV completion markers. Errors/retries do not
+  count as empty days. The streak is counted within each run.
 - Successful completion (date bounds, max-days, or no data) exits with status 0;
   errors exit with status 1, and an interrupted run exits with status 130.
 
@@ -197,14 +202,14 @@ Only bounded live trials have been run; the full-history loop has not been run.
   two missing days, with 24 hourly rows in each new XLSX/CSV.
 - **The same three-day range again:** skipped all three, downloaded nothing,
   and did not open the browser.
-- **2021-10-22 through 2021-10-21:** stopped after inspecting 2021-10-22, with no
-  download and no attempt to visit the next date; rechecked after the buffering
-  fix and retry changes.
-- **2022-11-05 through 2022-11-03:** also stopped on the initial no-data day.
+- Earlier bounded probes of **2021-10-22** and **2022-11-05** established the
+  no-data response/UI signals. The current 30-day stop rule is covered by
+  offline traversal tests, including gaps followed by existing or new reports.
 
 Lightweight tests cover CSV-only skipping, legacy migration, deletion only after
 successful conversion, invalid/partial CSVs, timestamps and batched skip logs,
-date/DST boundaries, report errors, retry limits/backoff/cancellation, and
+date/DST boundaries, the 30-consecutive-empty stop/reset rule, explicit run
+bounds, report errors, retry limits/backoff/cancellation, and
 stalled-step cancellation followed by a fresh successful attempt. These tests
 run sequentially, do not launch a browser, and never load `.env`:
 

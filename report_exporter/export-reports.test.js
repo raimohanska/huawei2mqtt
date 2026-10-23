@@ -2,7 +2,7 @@
 
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { options } = require('./export-reports');
+const { options, run } = require('./export-reports');
 const { validateDate, previousDate, plantDate } = require('./dates');
 const { validateReportResponse } = require('./report-ui');
 
@@ -59,4 +59,59 @@ test('hourly placeholders, zero yields, and 25-hour DST days do not stop travers
   assert.deepEqual(validateReportResponse(report), { empty: false, total: 25 });
   assert.deepEqual(validateReportResponse({ ...report, data: { total: 1, list: [{ yield: 0 }] } }), { empty: false, total: 1 });
   assert.throws(() => validateReportResponse({ ...report, data: { total: 25, list: Array(10).fill({}) } }));
+});
+
+async function simulateRun(argv, { existingIndex = -1, availableIndex = -1 } = {}) {
+  const latest = '2026-12-31';
+  const indexOf = date => (Date.parse(latest + 'T00:00:00Z') - Date.parse(date + 'T00:00:00Z')) / 86400000;
+  const queries = [];
+  const downloads = [];
+  const lines = [];
+  const original = console.log;
+  console.log = line => lines.push(line);
+  try {
+    await run(['--to', latest, ...argv], {
+      openReport: async options => {
+        const context = { close: async () => {} };
+        options.onContext(context);
+        return { context };
+      },
+      prepareReport: async () => {},
+      useExisting: async date => indexOf(date) === existingIndex,
+      queryDay: async (_, date) => {
+        queries.push(date);
+        return { empty: indexOf(date) !== availableIndex, total: 24 };
+      },
+      downloadDay: async (_, date) => downloads.push(date)
+    });
+  } finally { console.log = original; }
+  return { queries, downloads, lines };
+}
+
+test('the real traversal stops on the 30th confirmed empty day, not the first or 31st', async () => {
+  const result = await simulateRun(['--max-days', '31']);
+  assert.equal(result.queries.length, 30);
+  assert.equal(result.queries[29], '2026-12-02');
+  assert.deepEqual(result.downloads, []);
+  assert.ok(result.lines.at(-1).includes('30 consecutive no-data days ending 2026-12-02'));
+  assert.ok(result.lines.at(-1).includes('Visited=30, downloaded=0, skipped=0, empty=30'));
+});
+
+test('both existing CSVs and newly exported days reset consecutive no-data history', async () => {
+  // 20 empty days, one existing CSV, 20 empty days, one new report, then 30 empty.
+  const result = await simulateRun(['--max-days', '100'], { existingIndex: 20, availableIndex: 41 });
+  assert.equal(result.queries.length, 71);
+  assert.deepEqual(result.downloads, ['2026-11-20']);
+  assert.equal(result.queries.at(-1), '2026-10-21');
+  assert.ok(result.lines.at(-1).includes('30 consecutive no-data days ending 2026-10-21'));
+  assert.ok(result.lines.at(-1).includes('Visited=72, downloaded=1, skipped=1, empty=70'));
+});
+
+test('explicit date bounds and max-days still finish before 30 empty days', async () => {
+  const bounded = await simulateRun(['--from', '2026-12-29']);
+  assert.equal(bounded.queries.length, 3);
+  assert.ok(bounded.lines.at(-1).includes('date range completed'));
+  const limited = await simulateRun(['--max-days', '2']);
+  assert.equal(limited.queries.length, 2);
+  assert.ok(limited.lines.at(-1).includes('max-days limit reached'));
 });

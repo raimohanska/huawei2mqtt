@@ -8,12 +8,14 @@ const { describeError } = require('./errors');
 const { withRetries } = require('./retry');
 const { log, createSkipReporter } = require('./logger');
 
+const NO_DATA_LIMIT = 30;
+
 const HELP = `Usage: npm run export:reports -- [options]
 
-With no options, work backwards from today until the first confirmed empty day.
+With no options, work backwards from today until 30 consecutive no-data days.
   --from YYYY-MM-DD       Earliest date (inclusive)
   --to YYYY-MM-DD         Latest date (inclusive; default: today in the UI)
-  --max-days N            Visit at most N dates, including skipped dates
+  --max-days N            Visit at most N dates, including skipped/empty dates
   --today                 Visit today only (cannot combine with date bounds)
   --headed                Show the browser
   --timeout-minutes N     Download transfer timeout (default: 15 minutes)
@@ -58,7 +60,14 @@ function options(argv) {
   return result;
 }
 
-async function run(argv) {
+async function run(argv, {
+  openReport: open = openReport,
+  prepareReport: prepare = prepareReport,
+  selectDate: select = selectDate,
+  queryDay: query = queryDay,
+  useExisting: existing = useExisting,
+  downloadDay: download = downloadDay
+} = {}) {
   const config = options(argv);
   if (config.help) { log.info(HELP); return; }
   let session;
@@ -69,6 +78,8 @@ async function run(argv) {
   let visited = 0;
   let skipped = 0;
   let downloaded = 0;
+  let emptyDays = 0;
+  let emptyStreak = 0;
   let reason = 'date range completed';
   const skippedLog = createSkipReporter();
   const stop = () => {
@@ -88,18 +99,18 @@ async function run(argv) {
     }
     async function ensureSession() {
       if (!session) {
-        session = await openReport({ ...config, onContext: context => {
+        session = await open({ ...config, onContext: context => {
           activeContext = context;
           if (stopping) context.close().catch(() => {});
         } });
         if (stopping) { await session.context.close(); throw new Error('Stopped.'); }
-        await prepareReport(session);
+        await prepare(session);
       }
     }
     if (!latest) {
       latest = await withRetries(async () => {
         await ensureSession();
-        return selectDate(session, 'today');
+        return select(session, 'today');
       }, {
         attempts: config.attempts, signal: abort.signal,
         onRetry: async error => {
@@ -110,7 +121,7 @@ async function run(argv) {
     }
     const earliest = config.today ? latest : config.from;
     if (earliest && earliest > latest) throw new Error('The date range starts after today.');
-    log.info('Working backwards from ' + latest + (earliest ? ' through ' + earliest : ' until no data') +
+    log.info('Working backwards from ' + latest + (earliest ? ' through ' + earliest : ' until 30 consecutive no-data days') +
       '; action timeout ' + config.actionTimeoutMs / 1000 + 's, step timeout ' + config.stepTimeoutMs / 1000 +
       's, transfer timeout ' + config.timeoutMs / 60000 + ' minutes.');
     for (let date = latest; !earliest || date >= earliest; date = previousDate(date)) {
@@ -118,8 +129,9 @@ async function run(argv) {
       if (config.maxDays && visited >= config.maxDays) { reason = 'max-days limit reached'; break; }
       visited++;
       stage = 'checking existing files for ' + date;
-      if (await useExisting(date)) {
+      if (await existing(date)) {
         skipped++;
+        emptyStreak = 0;
         skippedLog.add(date);
         continue;
       }
@@ -127,15 +139,15 @@ async function run(argv) {
       const result = await withRetries(async attempt => {
         // An attempt can finish saving files and then lose the browser while
         // closing the Tasks panel. Do not export that day again on retry.
-        if (attempt > 1 && await useExisting(date)) return { empty: false };
+        if (attempt > 1 && await existing(date)) return { empty: false };
         stage = 'opening the report session for ' + date;
         await ensureSession();
         session.date = date;
         stage = 'loading the report for ' + date;
-        const report = await queryDay(session, date);
+        const report = await query(session, date);
         if (!report.empty) {
           stage = 'exporting and converting ' + date;
-          await downloadDay(session, date, report.total, config.timeoutMs);
+          await download(session, date, report.total, config.timeoutMs);
         }
         return report;
       }, {
@@ -149,9 +161,16 @@ async function run(argv) {
         }
       });
       if (result.empty) {
-        reason = 'no data on ' + date + ' (confirmed empty response, Total: 0, No data, Export disabled)';
-        break;
+        emptyDays++;
+        emptyStreak++;
+        log.info('No data ' + date + ' (' + emptyStreak + '/' + NO_DATA_LIMIT + ' consecutive)');
+        if (emptyStreak >= NO_DATA_LIMIT) {
+          reason = NO_DATA_LIMIT + ' consecutive no-data days ending ' + date;
+          break;
+        }
+        continue;
       }
+      emptyStreak = 0;
       downloaded++;
       log.info('Exported ' + date);
     }
@@ -169,7 +188,7 @@ async function run(argv) {
     skippedLog.flush();
     process.removeListener('SIGINT', stop);
     process.removeListener('SIGTERM', stop);
-    log.info('Finished: ' + reason + '. Visited=' + visited + ', downloaded=' + downloaded + ', skipped=' + skipped + '.');
+    log.info('Finished: ' + reason + '. Visited=' + visited + ', downloaded=' + downloaded + ', skipped=' + skipped + ', empty=' + emptyDays + '.');
   }
 }
 
