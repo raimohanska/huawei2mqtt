@@ -2,7 +2,7 @@
 
 const path = require('node:path');
 
-function loadConfig() {
+function loadEnv() {
   // Credentials are consumed only by application code, never printed or returned
   // through diagnostics. Existing process environment values take precedence.
   try {
@@ -10,6 +10,10 @@ function loadConfig() {
   } catch (error) {
     if (error.code !== 'ENOENT') throw new Error('Could not load exporter configuration.');
   }
+}
+
+function loadConfig() {
+  loadEnv();
   const names = ['HUAWEI_LOGIN_PAGE', 'HUAWEI_USERNAME', 'HUAWEI_PASSWORD'];
   if (names.some(name => !process.env[name])) {
     throw new Error('Set HUAWEI_LOGIN_PAGE, HUAWEI_USERNAME and HUAWEI_PASSWORD in report_exporter/.env.');
@@ -25,4 +29,4 @@ function loadConfig() {
   };
 }
 
-module.exports = { loadConfig };
+module.exports = { loadConfig, loadEnv };

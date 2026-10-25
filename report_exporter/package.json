@@ -12,9 +12,10 @@
     "browser:codegen": "playwright codegen --browser chromium",
     "export:today": "node export-today.js",
     "export:reports": "node export-reports.js",
-    "test": "node --test --test-concurrency=1 csv-files.test.js export-reports.test.js retry.test.js steps.test.js",
+    "test": "node --test --test-concurrency=1 csv-files.test.js export-reports.test.js influx-import.test.js retry.test.js steps.test.js",
     "test:browser": "node --test report-response.test.js",
-    "convert:csv": "node convert-csv.js"
+    "convert:csv": "node convert-csv.js",
+    "influx:import": "node influx-import.js"
   },
   "devDependencies": {
     "playwright": "1.64.1"

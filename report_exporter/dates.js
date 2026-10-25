@@ -72,4 +72,4 @@ function expectedHourlySlots(date) {
   return slots;
 }
 
-module.exports = { validateDate, previousDate, plantDate, validateMonth, previousMonth, daysInMonth, expectedHourlySlots };
+module.exports = { validateDate, previousDate, plantDate, validateMonth, previousMonth, daysInMonth, expectedHourlySlots, plantMidnight };

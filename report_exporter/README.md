@@ -17,7 +17,8 @@ Configure these variables locally in `report_exporter/.env`:
 - `HUAWEI_PASSWORD`: account password.
 
 Application code loads `.env` at runtime, preserving existing process environment
-values. `AGENTS.md` forbids LLMs and coding agents from reading credential files.
+values. The repository-root [`AGENTS.md`](../AGENTS.md) forbids LLMs and coding
+agents from reading credential files.
 Credentials, authentication headers, and raw browser errors are never printed.
 
 ## Full history: hourly first, then daily yields
@@ -181,6 +182,46 @@ npm run export:reports -- --monthly-only --max-months 3 --headed
 npm run export:reports -- --step-timeout-seconds 180 --attempts 5
 npm run export:reports -- --help
 ```
+
+## InfluxDB: single-day verification import
+
+The importer uses daily totals from the **monthly CSVs** in `exports/134568461/daily/`.
+Each selected calendar day produces **one point with one numeric field**,
+`yield_kwh`, taken directly from that day's `PV Yield (kWh)` column. It does not
+sum the monthly report, use hourly files, or import the cumulative `Total Yield`
+counter. A blank daily yield is imported as **0**. Dates absent from the report
+are rejected rather than invented.
+
+Set these values locally in `report_exporter/.env`:
+
+- `INFLUX_URL`: InfluxDB base URL (InfluxDB v2 write API).
+- `INFLUX_TOKEN`: write token.
+- `INFLUX_ORG`: organization.
+- `INFLUX_BUCKET`: target bucket.
+- `INFLUX_MEASUREMENT`: requested measurement, `energy-daily`.
+- `INFLUX_TAGS`: requested tags, `device:solar,location:autotalli`.
+
+All six are loaded at runtime. The importer never prints these settings, tokens,
+URLs, raw HTTP errors, or server response bodies. It does not need FusionSolar
+credentials or a browser.
+
+```sh
+# Preview CSV value and timestamp; no .env loading and no database request.
+npm run influx:import -- --date 2023-05-01 --dry-run
+
+# Write exactly this one day. No bulk mode or automatic write retries.
+npm run influx:import -- --date 2023-05-01
+```
+
+Timestamps are **midnight in Europe/Helsinki**, the plant's local day. The
+verification point for **2023-05-01** has value **32.64 kWh** and UTC timestamp
+**2023-04-30T21:00:00Z** (May 1 at 00:00 +03:00). This single point was accepted
+by InfluxDB with **HTTP 204**. No other dates have been imported by the agent;
+the import is paused for user verification before adding bulk import.
+
+The command requires one explicit `--date` and sends one line-protocol point in
+one POST. Repeating the same date with the same measurement/tags updates the
+same point rather than creating another timestamp. The timeout is 30 seconds.
 
 ## Verification
 
