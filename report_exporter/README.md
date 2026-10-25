@@ -183,11 +183,11 @@ npm run export:reports -- --step-timeout-seconds 180 --attempts 5
 npm run export:reports -- --help
 ```
 
-## InfluxDB: single-day verification import
+## InfluxDB import
 
 The importer uses daily totals from the **monthly CSVs** in `exports/134568461/daily/`.
 Each selected calendar day produces **one point with one numeric field**,
-`yield_kwh`, taken directly from that day's `PV Yield (kWh)` column. It does not
+`value`, taken directly from that day's `PV Yield (kWh)` column. It does not
 sum the monthly report, use hourly files, or import the cumulative `Total Yield`
 counter. A blank daily yield is imported as **0**. Dates absent from the report
 are rejected rather than invented.
@@ -209,19 +209,28 @@ credentials or a browser.
 # Preview CSV value and timestamp; no .env loading and no database request.
 npm run influx:import -- --date 2023-05-01 --dry-run
 
-# Write exactly this one day. No bulk mode or automatic write retries.
+# Write exactly this one day.
 npm run influx:import -- --date 2023-05-01
+
+# Validate and preview all available monthly CSVs.
+npm run influx:import -- --all --dry-run
+
+# Import all available monthly CSVs in batches of 1,000 points.
+npm run influx:import -- --all
 ```
 
-Timestamps are **midnight in Europe/Helsinki**, the plant's local day. The
+Timestamps are **21:00 in Europe/Helsinki**, accounting for daylight saving. The
 verification point for **2023-05-01** has value **32.64 kWh** and UTC timestamp
-**2023-04-30T21:00:00Z** (May 1 at 00:00 +03:00). This single point was accepted
-by InfluxDB with **HTTP 204**. No other dates have been imported by the agent;
-the import is paused for user verification before adding bulk import.
+**2023-05-01T18:00:00Z** (May 1 at 21:00 +03:00).
 
-The command requires one explicit `--date` and sends one line-protocol point in
-one POST. Repeating the same date with the same measurement/tags updates the
-same point rather than creating another timestamp. The timeout is 30 seconds.
+Choose either `--date` for one point or `--all` for all monthly CSVs under
+`exports/134568461/daily/YYYY/YYYY-MM.csv`. Bulk import parses each file once
+and validates every file before writing, then sends batches of up to 1,000
+points. Only days present in the CSVs are imported, including partial months.
+Repeating dates with the same measurement/tags updates the same points rather
+than creating additional timestamps. Each request has a 30-second timeout and
+no automatic retries. On failure, rerunning the command reimports all selected
+dates, overwriting identical points.
 
 ## Verification
 

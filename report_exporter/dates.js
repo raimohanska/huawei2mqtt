@@ -48,7 +48,11 @@ function plantTimeParts(timestamp) {
 }
 
 function plantMidnight(date) {
-  const target = Date.parse(validateDate(date) + 'T00:00:00Z');
+  return plantTime(date, 0);
+}
+
+function plantTime(date, hour) {
+  const target = Date.parse(validateDate(date) + 'T00:00:00Z') + hour * 3600000;
   let guess = target;
   for (let attempt = 0; attempt < 4; attempt++) {
     const parts = plantTimeParts(guess);
@@ -58,7 +62,7 @@ function plantMidnight(date) {
     if (next === guess) return guess;
     guess = next;
   }
-  throw new Error('Could not resolve plant-local midnight.');
+  throw new Error('Could not resolve plant-local time.');
 }
 
 function expectedHourlySlots(date) {
@@ -72,4 +76,4 @@ function expectedHourlySlots(date) {
   return slots;
 }
 
-module.exports = { validateDate, previousDate, plantDate, validateMonth, previousMonth, daysInMonth, expectedHourlySlots, plantMidnight };
+module.exports = { validateDate, previousDate, plantDate, validateMonth, previousMonth, daysInMonth, expectedHourlySlots, plantMidnight, plantTime };

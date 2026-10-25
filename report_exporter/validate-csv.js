@@ -3,11 +3,13 @@
 const ExcelJS = require('exceljs');
 const { validateDate, validateMonth, daysInMonth, expectedHourlySlots, plantDate } = require('./dates');
 
-async function validateCsv(csvPath, expectedPeriod, { now = Date.now() } = {}) {
-  const workbook = new ExcelJS.Workbook();
+async function validateCsv(csvPath, expectedPeriod, { now = Date.now(), sheet } = {}) {
   // Use the CSV reader already provided by ExcelJS, preserving timestamp text
-  // and blank/zero values rather than interpreting them as dates or numbers.
-  const sheet = await workbook.csv.readFile(csvPath, { map: value => value });
+  // and blank/zero values. Importers can reuse an already parsed worksheet.
+  if (!sheet) {
+    const workbook = new ExcelJS.Workbook();
+    sheet = await workbook.csv.readFile(csvPath, { map: value => value });
+  }
   const headers = sheet.getRow(1).values.slice(1);
   const required = ['Statistical Period', 'PV Yield (kWh)', 'Inverter Yield (kWh)'];
   if (headers[0] !== required[0] || required.some(name => !headers.includes(name)) ||
