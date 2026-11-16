@@ -23,6 +23,9 @@ configuration](DOCS.md). All Modbus and MQTT settings are entered on the app's
 **Configuration** page; no `.env` file is needed. The app runs `huawei-read.js`,
 not the FusionSolar report exporter.
 
+Add `https://github.com/raimohanska/huawei2mqtt` under the app store's
+**Repositories** menu to install directly from GitHub.
+
 ### Standalone Raspberry Pi
 
 Copy the updated `huawei-read.js` to the Pi using the command below. Add the

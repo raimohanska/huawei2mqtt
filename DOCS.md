@@ -11,6 +11,21 @@ report exports, or InfluxDB are involved.
 
 ## Install locally on Home Assistant OS
 
+### Install from GitHub
+
+In **Settings → Apps → Install app → ⋮ → Repositories**, add:
+
+```text
+https://github.com/raimohanska/huawei2mqtt
+```
+
+Find **Huawei to MQTT** in the store and install it. Then follow configuration
+steps 4–6 below. The repository metadata and app files must be pushed to GitHub
+before Home Assistant can discover them. If it was already added, check for
+updates/reload the store.
+
+### Manual local installation
+
 1. Create `/addons/huawei2mqtt/` on the Home Assistant host (for example through
    the Samba or SSH app).
 2. Copy these files from this repository into that directory:

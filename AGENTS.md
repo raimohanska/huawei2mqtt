@@ -1,5 +1,8 @@
 # Repository agent instructions
 
+- Commit task changes when they are ready and relevant checks pass, unless the
+  user asks otherwise. Review the staged changes for secrets and unrelated user
+  work before committing. Do not push unless the user requests it.
 - Keep all Playwright extraction, report-processing, and InfluxDB import code
   under `report_exporter/`.
 - **LLMs and coding agents must never read `.env` files or their contents.**

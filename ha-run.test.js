@@ -62,3 +62,9 @@ test('Docker build context includes only the app runtime files', () => {
     '!Dockerfile', '!.dockerignore', '!huawei-read.js', '!ha-run.js', '!config.json', '!LICENSE'
   ]);
 });
+
+test('repository metadata exists for installation through the HA store', () => {
+  const metadata = fs.readFileSync('repository.yaml', 'utf8');
+  assert.match(metadata, /^name: "Huawei to MQTT"$/m);
+  assert.match(metadata, /^url: "https:\/\/github\.com\/raimohanska\/huawei2mqtt"$/m);
+});
