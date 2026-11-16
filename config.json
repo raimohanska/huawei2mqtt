@@ -1,0 +1,39 @@
+{
+  "name": "Huawei to MQTT",
+  "version": "0.1.0",
+  "slug": "huawei2mqtt",
+  "description": "Read-only Huawei inverter Modbus bridge with MQTT discovery",
+  "arch": ["aarch64", "amd64"],
+  "startup": "application",
+  "boot": "auto",
+  "init": true,
+  "timeout": 30,
+  "options": {
+    "MODBUS_HOST": "192.168.200.1",
+    "MODBUS_PORT": 6607,
+    "MODBUS_UNIT": 0,
+    "MODBUS_TIMEOUT": 15,
+    "MODBUS_DELAY": 2,
+    "MQTT_BROKER_URL": "mqtt://core-mosquitto:1883",
+    "MQTT_USER": "",
+    "MQTT_PASSWORD": "",
+    "MQTT_TOPIC_PREFIX": "huawei",
+    "HA_DISCOVERY_PREFIX": "homeassistant",
+    "HA_DEVICE_NAME": "Huawei Inverter",
+    "POLL_INTERVAL": 15
+  },
+  "schema": {
+    "MODBUS_HOST": "str",
+    "MODBUS_PORT": "port",
+    "MODBUS_UNIT": "int(0,247)",
+    "MODBUS_TIMEOUT": "float(0.1,300)",
+    "MODBUS_DELAY": "float(0,60)",
+    "MQTT_BROKER_URL": "str",
+    "MQTT_USER": "str",
+    "MQTT_PASSWORD": "password",
+    "MQTT_TOPIC_PREFIX": "str",
+    "HA_DISCOVERY_PREFIX": "str",
+    "HA_DEVICE_NAME": "str",
+    "POLL_INTERVAL": "int(5,86400)"
+  }
+}

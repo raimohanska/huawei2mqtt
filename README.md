@@ -1,5 +1,12 @@
 # huawei2mqtt
 
+Unofficial project; not affiliated with, sponsored by, or endorsed by Huawei.
+Huawei and product names are trademarks of their respective owners and are
+used only to identify compatible products.
+
+Licensed under the [MIT License](LICENSE). This licence covers this project's
+code, not third-party software or trademarks.
+
 Goal: read AC active power from a Huawei SUN2000-8KTL-M1 inverter on a Raspberry
 Pi and publish it to an MQTT broker on the home network.
 
@@ -8,6 +15,15 @@ Node 12 reader supports one-shot snapshots and continuous MQTT publishing with
 Home Assistant discovery. See [HANDOFF.md](HANDOFF.md) for earlier connection history.
 
 ## MQTT bridge and Home Assistant discovery
+
+### Home Assistant app
+
+To run the bridge inside Home Assistant OS, see [app installation and
+configuration](DOCS.md). All Modbus and MQTT settings are entered on the app's
+**Configuration** page; no `.env` file is needed. The app runs `huawei-read.js`,
+not the FusionSolar report exporter.
+
+### Standalone Raspberry Pi
 
 Copy the updated `huawei-read.js` to the Pi using the command below. Add the
 following settings to your existing `.env` **locally on the Pi**; keep your

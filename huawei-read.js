@@ -613,8 +613,8 @@ async function runBridge(modbus, config) {
   log('INFO', 'Bridge stopped.');
 }
 
-async function main() {
-  const argv = process.argv.slice(2);
+async function main(argv, env) {
+  argv = argv || process.argv.slice(2);
   if (argv.includes('--help')) {
     console.log('Usage: node huawei-read.js [--host 192.168.200.1] [--port 6607]');
     console.log('       [--unit 0] [--timeout 15] [--delay 2]');
@@ -624,7 +624,7 @@ async function main() {
     console.log('Timeout and inter-request delay are in seconds. Close FusionSolar first.');
     return;
   }
-  const env = Object.assign({}, loadEnv(), process.env);
+  env = env || Object.assign({}, loadEnv(), process.env);
   const config = options(argv.filter(arg => arg !== '--once'), env);
   if (!argv.includes('--once')) {
     const bridge = bridgeOptions(env);
@@ -651,5 +651,5 @@ if (require.main === module) {
 
 module.exports = {
   REGISTERS, parseEnv, options, decode, snapshot, bridgeOptions,
-  mqttString, mqttPacket, MqttPublisher, discoveryMessages, telemetry, log
+  mqttString, mqttPacket, MqttPublisher, discoveryMessages, telemetry, log, main
 };

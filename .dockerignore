@@ -1,0 +1,8 @@
+# Explicit allowlist: never send local credentials, exports, or browser profiles.
+**
+!Dockerfile
+!.dockerignore
+!huawei-read.js
+!ha-run.js
+!config.json
+!LICENSE
